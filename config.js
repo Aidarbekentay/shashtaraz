@@ -15,8 +15,8 @@ export const ADMIN_EMAIL = "aidarbekentay@gmail.com";
 // 3) Шаштараз туралы мәлімет
 export const SHOP = {
   name: "Шаштараз",
-  phone: "+7 701 530 98 98",
-  whatsapp: "77015309898",
+  phone: "+7 771 614 20 59",
+  whatsapp: "77716142059",
   openHour: 10,        // 10:00
   closeHour: 22,       // 22:00
   stepMin: 30,         // бір бронь — 30 минут
