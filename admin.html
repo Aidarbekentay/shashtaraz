@@ -6,23 +6,19 @@
 <meta name="robots" content="noindex">
 <title>Шаштараз — әкімші</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=PT+Serif:ital,wght@0,700;1,700&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Cg fill=%27none%27 stroke=%27%231f4e79%27 stroke-width=%275%27 stroke-linecap=%27round%27%3E%3Ccircle cx=%2716%27 cy=%2746%27 r=%279%27/%3E%3Ccircle cx=%2748%27 cy=%2746%27 r=%279%27/%3E%3Cpath d=%27M22 39 L46 6M42 39 L18 6%27/%3E%3C/g%3E%3Ccircle cx=%2732%27 cy=%2725%27 r=%273.5%27 fill=%27%23b5832f%27/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div class="pole" aria-hidden="true"></div>
+    <div class="brand"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"><circle cx="16" cy="46" r="9"/><circle cx="48" cy="46" r="9"/><path d="M22 39 L46 6"/><path d="M42 39 L18 6"/></g><circle cx="32" cy="25" r="3" fill="var(--brass)"/></svg><div class="pole" aria-hidden="true"></div></div>
     <h1>Жазылғандар <em>тізімі</em></h1>
-    <div class="meta"><span id="who">Кірмегенсіз</span></div>
+    <div class="meta"><span>Бүгінгі және алдағы күндердегі броньдар</span></div>
   </header>
 
-  <div id="login" class="sheet">
-    <p class="note">Тізімді көру үшін әкімшінің Google аккаунтымен кіріңіз.</p>
-    <div class="actions"><button class="btn" id="btnIn" type="button">Google арқылы кіру</button></div>
-    <div id="loginMsg"></div>
-  </div>
 
-  <div id="panel" hidden>
+  <div id="panel">
     <section aria-labelledby="dtitle">
       <span class="label" id="dtitle">Күн</span>
       <div class="days" id="days"></div>
@@ -34,15 +30,15 @@
         <tbody id="rows"></tbody>
       </table></div>
     </section>
-    <div class="actions" style="margin-top:24px"><a class="btn ghost" href="index.html">Клиент беті</a><button class="btn ghost" id="btnOut" type="button">Шығу</button></div>
+    <div class="actions" style="margin-top:24px"><a class="btn ghost" href="index.html">Клиент беті</a></div>
   </div>
 </div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore, collection, query, where, onSnapshot, doc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { firebaseConfig, ADMIN_EMAIL } from "./config.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { firebaseConfig } from "./config.js";
 import { dayKey, dayList, dayTitle, WD, waDigits, el } from "./util.js";
 
 const $ = id => document.getElementById(id);
@@ -53,23 +49,9 @@ const auth = getAuth(app);
 const dates = dayList();
 let sel = dayKey(dates[0]), unsub = null, rows = [];
 
-$("btnIn").onclick = async () => {
-  $("loginMsg").textContent = "";
-  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
-  catch (e) { console.error(e); $("loginMsg").append(el("div", { class: "msg err", text: "Кіру сәтсіз: " + (e.code || e.message) })); }
-};
-$("btnOut").onclick = () => signOut(auth);
-
-onAuthStateChanged(auth, u => {
-  const ok = u && !u.isAnonymous && u.email && u.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-  $("who").textContent = u && !u.isAnonymous ? u.email : "Кірмегенсіз";
-  $("login").hidden = !!ok; $("panel").hidden = !ok;
-  if (u && !u.isAnonymous && !ok) {
-    $("loginMsg").textContent = "";
-    $("loginMsg").append(el("div", { class: "msg err", text: u.email + " әкімші емес. Басқа аккаунтпен кіріңіз." }));
-  }
-  if (ok) { renderDays(); subscribe(); } else if (unsub) { unsub(); unsub = null; }
-});
+onAuthStateChanged(auth, u => { if (u && !unsub) { renderDays(); subscribe(); } });
+signInAnonymously(auth).catch(e => { console.error(e); $("count").textContent = "Қосыла алмадық: " + (e.code || e.message); });
+renderDays();
 
 function renderDays() {
   const box = $("days"); box.textContent = "";
@@ -93,7 +75,7 @@ function subscribe() {
   unsub = onSnapshot(query(collection(db, "bookings"), where("date", "==", sel)), snap => {
     rows = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.time < b.time ? -1 : 1);
     renderRows();
-  }, err => { console.error(err); $("count").textContent = "Оқылмады: " + err.code + " (firestore.rules ішіндегі email-ді тексеріңіз)"; });
+  }, err => { console.error(err); $("count").textContent = "Оқылмады: " + err.code; });
 }
 
 function renderRows() {
