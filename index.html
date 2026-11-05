@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="kk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Шаштараз — онлайн жазылу</title>
+<meta name="description" content="Шаштаразға онлайн жазылу. Күн сайын 10:00–22:00, демалыссыз.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=PT+Serif:ital,wght@0,700;1,700&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="pole" aria-hidden="true"></div>
+    <h1><span id="shopName">Шаштараз</span> — <em>онлайн жазылу</em></h1>
+    <div class="meta">
+      <span>Күн сайын <b id="hours">10:00–22:00</b>, демалыссыз</span>
+      <span>Бір жазылу — <b id="step">30 минут</b></span>
+    </div>
+  </header>
+
+  <section aria-labelledby="dtitle">
+    <span class="label" id="dtitle">Күнді таңдаңыз</span>
+    <div class="days" id="days"></div>
+  </section>
+
+  <section aria-labelledby="stitle">
+    <div class="head-row">
+      <h2 id="stitle">Уақыт</h2>
+      <div class="legend">
+        <span><i style="background:var(--free)"></i>Бос</span>
+        <span><i style="background:var(--busy)"></i>Бос емес</span>
+        <span><i style="background:var(--mine)"></i>Сіздің жазылуыңыз</span>
+      </div>
+    </div>
+    <p id="status" class="note">Кесте жүктелуде…</p>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <div id="sheet" class="sheet" hidden></div>
+
+  <div class="wa">
+    <span>Сұрақ болса, WhatsApp-қа жазыңыз:</span>
+    <span class="num" id="waNum"></span>
+    <a id="waLink" target="_blank" rel="noopener">WhatsApp ашу →</a>
+  </div>
+
+  <footer><a href="admin.html">Әкімшіге кіру</a></footer>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, query, where, onSnapshot, doc, writeBatch, serverTimestamp, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { firebaseConfig, SHOP } from "./config.js";
+import { pad, tstr, slotId, startOf, isPast, dayKey, dayList, timeList, dayTitle, WD, MON, el } from "./util.js";
+
+const $ = id => document.getElementById(id);
+$("shopName").textContent = SHOP.name;
+document.title = SHOP.name + " — онлайн жазылу";
+$("hours").textContent = pad(SHOP.openHour) + ":00–" + pad(SHOP.closeHour) + ":00";
+$("step").textContent = SHOP.stepMin + " минут";
+$("waNum").textContent = SHOP.phone;
+$("waLink").href = "https://wa.me/" + SHOP.whatsapp + "?text=" + encodeURIComponent("Сәлеметсізбе! Шаштаразға бос па?");
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+let dates = dayList(), times = timeList();
+let todayKey = dayKey(dates[0]), sel = todayKey, pick = null;
+let slots = {}, loaded = false, uid = null, flash = null, busy = false;
+
+const freeCount = k => times.filter(m => !isPast(k, m) && !slots[slotId(k, m)]).length;
+
+function renderDays() {
+  const box = $("days"); box.textContent = "";
+  dates.forEach((d, i) => {
+    const k = dayKey(d);
+    box.append(el("button", {
+      class: "day", type: "button", "aria-pressed": String(k === sel),
+      onclick: () => { sel = k; pick = null; flash = null; render(); }
+    },
+      el("span", { class: "dw", text: i === 0 ? "Бүгін" : i === 1 ? "Ертең" : WD[d.getUTCDay()] }),
+      el("span", { class: "dn", text: String(d.getUTCDate()) }),
+      el("span", { class: "df", text: loaded ? freeCount(k) + " бос" : " " })
+    ));
+  });
+}
+
+function renderGrid() {
+  const g = $("grid"); g.textContent = "";
+  const i = dates.findIndex(x => dayKey(x) === sel);
+  $("stitle").textContent = dayTitle(dates[i], i);
+  times.forEach(m => {
+    const id = slotId(sel, m), s = slots[id];
+    let cls, lab;
+    if (s && uid && s.uid === uid) { cls = "mine"; lab = "сіздікі"; }
+    else if (s) { cls = "busy"; lab = "бос емес"; }
+    else if (isPast(sel, m)) { cls = "past"; lab = "өтті"; }
+    else { cls = "free"; lab = "бос"; }
+    const clickable = cls === "free" || cls === "mine";
+    if (pick === m && clickable) cls += " sel";
+    const b = el("button", { class: "slot " + cls, type: "button", "aria-label": tstr(m) + " — " + lab },
+      el("span", { text: tstr(m) }), el("small", { text: lab }));
+    if (clickable) b.onclick = () => { pick = m; flash = null; render(); $("sheet").scrollIntoView({ behavior: "smooth", block: "nearest" }); };
+    else b.disabled = true;
+    g.append(b);
+  });
+  if (loaded) {
+    const f = freeCount(sel);
+    $("status").textContent = f ? f + " бос уақыт бар. Ыңғайлысын таңдаңыз." : "Бұл күнге бос уақыт қалмады. Басқа күнді таңдаңыз.";
+  }
+}
+
+function renderSheet() {
+  const sh = $("sheet"); sh.textContent = "";
+  if (pick === null && !flash) { sh.hidden = true; return; }
+  sh.hidden = false;
+  if (flash) { sh.append(el("div", { class: "msg " + flash.kind, text: flash.text })); if (pick === null) return; }
+  const id = slotId(sel, pick), s = slots[id];
+  const d = dates.find(x => dayKey(x) === sel);
+  sh.append(el("div", { class: "when", text: d.getUTCDate() + " " + MON[d.getUTCMonth()] + " · " + tstr(pick) + "–" + tstr(pick + SHOP.stepMin) }));
+
+  if (s && uid && s.uid === uid) {
+    sh.append(
+      el("p", { class: "note", text: "Сіз осы уақытқа жазылдыңыз. Келе алмасаңыз, жазылуды болдырмаңыз." }),
+      el("div", { class: "actions" },
+        el("button", { class: "btn danger", type: "button", text: "Жазылуды болдырмау", onclick: e => cancel(id, e.target) }),
+        el("button", { class: "btn ghost", type: "button", text: "Жабу", onclick: () => { pick = null; render(); } }))
+    );
+    return;
+  }
+
+  const f = el("form");
+  f.innerHTML = '<div class="fields"><div class="field"><label for="f-name">Атыңыз</label><input id="f-name" required maxlength="40" autocomplete="name" placeholder="Мысалы: Айдос"></div><div class="field"><label for="f-phone">Телефон</label><input id="f-phone" required type="tel" inputmode="tel" maxlength="20" autocomplete="tel" placeholder="+7 7__ ___ __ __"></div></div><div class="actions" style="margin-top:14px"><button class="btn" type="submit" id="f-go">Жазылу</button><button class="btn ghost" type="button" id="f-x">Бас тарту</button></div>';
+  sh.append(f);
+  try { const me = JSON.parse(localStorage.getItem("barber-me") || "null"); if (me) { f.querySelector("#f-name").value = me.name || ""; f.querySelector("#f-phone").value = me.phone || ""; } } catch (e) {}
+  f.querySelector("#f-x").onclick = () => { pick = null; render(); };
+  f.onsubmit = e => {
+    e.preventDefault();
+    const name = f.querySelector("#f-name").value.trim(), phone = f.querySelector("#f-phone").value.trim();
+    if (!name) { flash = { kind: "err", text: "Атыңызды жазыңыз." }; render(); return; }
+    if (phone.replace(/\D/g, "").length < 10) { flash = { kind: "err", text: "Телефон нөмірін толық жазыңыз, мысалы +7 701 123 45 67." }; render(); return; }
+    try { localStorage.setItem("barber-me", JSON.stringify({ name, phone })); } catch (e) {}
+    book(id, pick, name, phone, f.querySelector("#f-go"));
+  };
+}
+
+function render() { renderDays(); renderGrid(); renderSheet(); }
+
+async function ensureUser() {
+  if (auth.currentUser) return auth.currentUser.uid;
+  const cred = await signInAnonymously(auth);
+  return cred.user.uid;
+}
+
+async function book(id, m, name, phone, btn) {
+  if (busy) return; busy = true;
+  btn.disabled = true; btn.textContent = "Сақталуда…";
+  try {
+    uid = await ensureUser();
+    const date = sel, time = tstr(m);
+    const b = writeBatch(db);
+    b.set(doc(db, "slots", id), { date, time, start: Timestamp.fromDate(startOf(date, m)), uid, createdAt: serverTimestamp() });
+    b.set(doc(db, "bookings", id), { name, phone, date, time, uid, createdAt: serverTimestamp() });
+    await b.commit();
+    flash = { kind: "ok", text: "Жазылдыңыз: " + time + ". Күтеміз!" };
+  } catch (e) {
+    console.error(e);
+    flash = e.code === "permission-denied"
+      ? { kind: "err", text: tstr(m) + " уақыты бос емес екен немесе өтіп кетті. Басқасын таңдаңыз." }
+      : { kind: "err", text: "Сақталмады. Интернетті тексеріп, қайта көріңіз." };
+    pick = null;
+  }
+  busy = false; render();
+}
+
+async function cancel(id, btn) {
+  btn.disabled = true;
+  try {
+    const b = writeBatch(db);
+    b.delete(doc(db, "bookings", id));
+    b.delete(doc(db, "slots", id));
+    await b.commit();
+    flash = { kind: "ok", text: "Жазылу болдырылмады." }; pick = null;
+  } catch (e) { console.error(e); flash = { kind: "err", text: "Өшірілмеді. Қайта көріңіз." }; btn.disabled = false; }
+  render();
+}
+
+onAuthStateChanged(auth, u => { uid = u ? u.uid : null; render(); });
+if (!auth.currentUser) signInAnonymously(auth).catch(e => console.warn("anon sign-in", e));
+
+const timer = setTimeout(() => { if (!loaded) $("status").textContent = "Кестеге қосыла алмай жатырмыз. Сәл күтіңіз немесе WhatsApp арқылы жазылыңыз."; }, 10000);
+onSnapshot(query(collection(db, "slots"), where("date", ">=", todayKey)), snap => {
+  const next = {}; snap.forEach(d => { next[d.id] = d.data(); });
+  slots = next; loaded = true; clearTimeout(timer); render();
+}, err => { console.error(err); clearTimeout(timer); $("status").textContent = "Кесте жүктелмеді. WhatsApp арқылы жазылыңыз."; });
+
+// Минут сайын өткен уақыттарды жаңарту; түн ауса — күндер тізімін жаңарту
+setInterval(() => {
+  if (document.querySelector("#sheet input:focus")) return;
+  const nk = dayKey(dayList()[0]);
+  if (nk !== todayKey) { dates = dayList(); if (sel === todayKey) sel = nk; todayKey = nk; }
+  renderDays(); renderGrid();
+}, 60000);
+
+render();
+</script>
+</body>
+</html>
