@@ -63,7 +63,7 @@ document.title = SHOP.name + " — онлайн жазылу";
 $("hours").textContent = pad(SHOP.openHour) + ":00–" + pad(SHOP.closeHour) + ":00";
 $("step").textContent = SHOP.stepMin + " минут";
 $("waNum").textContent = SHOP.phone;
-$("waLink").href = "https://wa.me/" + SHOP.whatsapp + "?text=" + encodeURIComponent("Сәлеметсізбе! Шаштаразға бос па?");
+$("waLink").href = "https://wa.me/" + SHOP.whatsapp + "?text=" + encodeURIComponent("Сәлеметсізбе! Шаштаразға бос орын барма?");
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
